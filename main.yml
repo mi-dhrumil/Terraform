@@ -1,0 +1,72 @@
+---
+- name: Install infra on server
+  hosts: all
+  become: yes
+  vars_prompt:
+    - name: new_domain
+      prompt: "Enter the new domain name"
+      private: no  
+  tasks:
+    - name: Install required packages
+      package:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - wget
+          - software-properties-common
+        state: present
+      when: ansible_os_family == "Debian"
+    - name: Add Docker repository (for Debian/Ubuntu)
+      apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        # data: "{{ lookup('url', 'https://download.docker.com/linux/ubuntu/gpg', split_lines=False) }}"
+        state: present
+    - name: Add Docker repository (for Debian/Ubuntu)
+      apt_repository:
+        repo: deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable
+      when: ansible_os_family == "Debian"
+    - name: Install Docker
+      apt:
+         name: docker-ce
+         state: present
+      when: ansible_os_family == "Debian"
+    - name: Start and enable Docker service
+      service:
+        name: docker
+        state: started
+        enabled: yes
+      when: ansible_os_family == "Debian"
+    - name: Change docker.sock permission
+      file:
+        path: /var/run/docker.sock
+        owner: ubuntu
+        group: ubuntu   
+    - name: Install docker-compose
+      apt:
+        name: docker-compose
+        state: present
+    - name: creates multiple directories for nginx and certbot
+      file:
+        path: "/home/{{ ansible_ssh_user }}/{{ item }}"
+        state: directory
+      loop:
+       # - nginx
+        - user_conf.d
+      become: no 
+    - name: Download nginx file
+      get_url:
+        url: https://docker-config-mind.s3.ap-south-2.amazonaws.com/api.conf  # Replace with the URL of the file
+        dest: /home/{{ ansible_ssh_user }}/user_conf.d/
+    - name: Download docker-compose file
+      get_url:
+        url: https://docker-config-mind.s3.ap-south-2.amazonaws.com/docker-compose.yml  # Replace with the URL of the file
+        dest: /home/{{ ansible_ssh_user }}
+    - name: Replace domain in nginx config
+      replace:
+        path: "/home/{{ ansible_ssh_user }}/user_conf.d//api.conf"
+        regexp: 'example\.com'
+        replace: "{{ new_domain }}"
+    - name: Run docker-compose
+      shell: docker-compose up -d 
+    
